@@ -31,10 +31,6 @@ function settings {
     lock altit to altitude - 22.6.
   }
 
-  if vang(vxcl(up:vector, errorVector), vxcl(up:vector, ship:velocity:surface)) > 30 {
-    set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000).
-  }
-
   set engnum to 3.
   LBCalc().
   set entryburnalt to 24000.
@@ -49,6 +45,7 @@ function settings {
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
   set ImpactTime to altit / abs(ship:verticalspeed).
   set Thr to LBAlt / altit.	
+  set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000).
   sas off.
   rcs on.
 }

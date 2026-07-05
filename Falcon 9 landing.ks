@@ -9,7 +9,6 @@ landing().
 function settings {
   unlock all.
   set ship:control:pilotmainthrottle to 0.
-  set errorScalling to 1.
   set preset to "LZ-1". // Your preset where to land
   if preset = "LZ-1" {
     set landingZone to latlng(-0.195523668957612,-74.4851660606608).
@@ -35,8 +34,9 @@ function settings {
   LBCalc().
   set entryburnalt to 24000.
   set entryburnmode to 3.
-  set speedcancelonentry to 300.
-  set targetspeedonentry to 1400/3.6.
+  set speedcancelonentry to 220.
+  set landingburncalc to 0.
+  set boostbackcalc to 1.
   set lngoff to (landingZone:lng - addons:tr:impactpos:lng)*10472.
   set latoff to (landingZone:lat - addons:tr:impactpos:lat)*10472.
   set myvel to ship:velocity:surface.
@@ -45,17 +45,18 @@ function settings {
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
   set ImpactTime to altit / abs(ship:verticalspeed).
   set Thr to LBAlt / altit.	
-  set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000).
+  set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000). 
   sas off.
   rcs on.
 }
 
 function overshootTargetError {
   if vang(vxcl(up:vector, errorVector), vxcl(up:vector, ship:velocity:surface)) > 90 {
-    local overshootTarget is landingZone:position+vxcl(up:vector,-ship:velocity:surface):normalized*tarerror.
+    set overshootTarget to landingZone:position-vxcl(up:vector,-ship:velocity:surface):normalized*tarerror.
   } else {
-    local overshootTarget is landingZone:position+vxcl(up:vector,ship:velocity:surface):normalized*tarerror.
+    set overshootTarget to landingZone:position+vxcl(up:vector,ship:velocity:surface):normalized*tarerror.
   }
+
   return getImpact():position - overshootTarget.
 }
 
@@ -88,9 +89,10 @@ function boostback {
   }
 
   unlock steering.
-  wait 1.
+  wait 2.
   set sstatus to "Boostback burn shutdown, T+ " + round(t,1) + " Seconds".
   lock throttle to 0.
+  set boostbackcalc to 0.
   wait 2.
   toggle brakes.
   unlock steering.
@@ -129,7 +131,7 @@ function entry {
 
   set sstatus to "Awaiting for entry burn, T+ " + round(t,1) + " Seconds".
   set ship:control:fore to 0.
-  set steeringManager:maxstoppingtime to 5.
+  set steeringManager:maxstoppingtime to 10.
   set steeringManager:yawts to 5.
   set steeringManager:pitchts to 5.
   until altit < entryburnalt {
@@ -137,9 +139,10 @@ function entry {
   }
 
   set sstatus to "Entry burn starting, one engine, T+ " + round(t,1) + " Seconds".
-  lock aoa to max(-10, -1 * max(1,(errorVector():mag/300))).
+  lock aoa to max(-20, -(errorVector():mag/100)).
   lock steering to Steer().
   lock throttle to 1.
+  set targetspeedonentry to myvel:mag - speedcancelonentry.
   if entryburnmode = 1 {
     until myvel:mag < targetspeedonentry {
       printing().
@@ -163,14 +166,17 @@ function entry {
   wait 0.1.
   toggle ag6.
   set sstatus to "Controlled descent".
-  set aoa to 45.
+  lock aoa to min(45, errorVector:mag/15).
+  lock steering to Steer().
   set engnum to 3.
+  set landingburncalc to 1.
   lbcalc().
   until altit < LBAlt-100 and altit < 3000 {
     printing().
     lbcalc().
-    set altitudeScaling to altit^0.1.
-    set aoa to min(45, (errorVector:mag/50)*altitudeScaling).
+    if errorVector:mag < 100 {
+      set aoa to 5.
+    }
   }
 }
 
@@ -179,20 +185,25 @@ function landing {
   set sstatus to "Landing burn has started, T+ " + round(t,1) + " Seconds".
   toggle ag6.
   set aoa to -2.
+  lock steering to Steer().
   wait 0.1.
   lock throttle to Thr.
   wait 1.
   toggle ag6.
   wait 0.01.
-  until ship:velocity:surface:mag < 90 {
-    Steer().
+  until ship:velocity:surface:mag < 100 {
     printing().
     lbcalc().
   }
 
-  lock aoa to max(-30, -1 * max(1,(errorVector():mag/2))).
+  lock aoa to max(-20, -(errorVector():mag/2)).
+  until altit < 200 {
+    printing().
+    lbcalc().
+  }
+
+  lock aoa to max(-10, -(errorVector():mag/2)).
   until altit < 100 {
-    Steer().
     printing().
     lbcalc().
   }
@@ -259,19 +270,24 @@ function printing {
   clearscreen.
   set t to time:seconds - n.
   set myvel to ship:velocity:surface.
-  set lngoff to (landingZone:lng - getImpact:lng)*10472.
-  set latoff to (landingZone:lat - getImpact:lat)*10472.	
   print "Welcome to Falcon 9 Landing Software".
   print "Your preset is " +  preset.
   print "Status: " + sstatus.
   print "T+ since start of script to landing: " + round(t,1) + " Seconds".
   print "Entry burn altitude: " + entryburnalt + " Meters".
-  print "Overshoot(M): " + tarerror.
-  print "OvershootError(M) " + overshootTargetError:mag.
   print "Error(M): " + errorVector:mag.
-  print "Latoff(M): " + latoff.
-  print "Lngoff(M): " + lngoff.
+  if boostbackcalc = 1 {
+    print "Overshoot(M): " + tarerror.
+    print "OvershootError(M) " + overshootTargetError:mag.
+  }
+
+  if landingburncalc = 1 {
+    print "Landing Burn Altitude : " + LBAlt + " Meters".
+    print "Ship possible thrust: "  + shippossiblethr + " kN".
+  }
+
   print "Press 10 to abort current program".
+  wait 0.1.
 }
 
 function LBCalc {
@@ -290,8 +306,6 @@ function LBCalc {
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
   set ImpactTime to altit / abs(ship:verticalspeed).
   set Thr to LBAlt / altit.
-  print "Landing Burn Altitude : " + LBAlt + " Meters".
-  print "Ship possible thrust: "  + shippossiblethr + " kN".
 }
 
 function errorVector {
@@ -299,13 +313,10 @@ function errorVector {
 }
 
 function Steer {
- local errorVector is errorVector().
- local velVector is -ship:velocity:surface.
- local result is velVector + errorVector*errorScalling.
-
- if vang(result, velVector) > aoa
+ local result is -myVel + errorVector.
+ if vang(result, -myVel) > aoa
  {
-   set result to velVector:normalized + tan(aoa)*errorVector:normalized.
+   set result to -myVel:normalized + tan(aoa)*errorVector:normalized.
  }
 
  return lookdirup(result, ship:facing:topvector).

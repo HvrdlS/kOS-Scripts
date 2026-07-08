@@ -5,6 +5,10 @@ coast().
 entry().
 landing().
 
+on ag10 {
+  abortofscript().
+}
+
 
 function settings {
   unlock all.
@@ -31,6 +35,7 @@ function settings {
   }
 
   set engnum to 3.
+  set grav to body:mu / body:radius^2.
   LBCalc().
   set entryburnalt to 34000.
   set entryburnmode to 3.
@@ -40,23 +45,19 @@ function settings {
   set lngoff to (landingZone:lng - addons:tr:impactpos:lng)*10472.
   set latoff to (landingZone:lat - addons:tr:impactpos:lat)*10472.
   set myvel to ship:velocity:surface.
-  set grav to constant:g * body:mass / body:radius^2.
-  set maxAccel to (shippossiblethr / ship:mass) - grav.	
-  set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
-  set Thr to LBAlt / altit.	
-  set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000). // overshoot distance calculation based on horizontalspeed and distance to the landing zone
-  sas off.
   rcs on.
 }
 
 function overshootTargetError {
   if vang(vxcl(up:vector, errorVector), vxcl(up:vector, ship:velocity:surface)) > 90 {  // checks for whether landing zone is behind or at the side of the vehicle to overshoot correctly
-    set overshootTarget to landingZone:position-vxcl(up:vector,-ship:velocity:surface):normalized*tarerror.
+    set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000).
+    set overshootTarget to landingZone:position+vxcl(up:vector,-ship:velocity:surface):normalized*tarerror.
   } else {
+    set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000).
     set overshootTarget to landingZone:position+vxcl(up:vector,ship:velocity:surface):normalized*tarerror.
   }
 
-  return getImpact():position - overshootTarget.
+  return getImpact():position - overshootTarget().
 }
 
 function boostback {
@@ -71,7 +72,7 @@ function boostback {
   set steeringManager:pitchtorquefactor to 0.7.
   set steeringManager:yawtorquefactor to 0.7.
   set steeringManager:rolltorquefactor to 0.3.
-  lock steering to -vxcl(up:vector, overshootTargetError).
+  lock steering to -vxcl(up:vector, overshootTargetError()).
   lock throttle to 0.2.
   set ti to time:seconds + 6.
   until time:seconds > ti {
@@ -80,19 +81,19 @@ function boostback {
 
   lock throttle to 1.
   set sstatus to "Boostback burn has started, T+ " + round(t,1) + " Seconds".
-  until abs(overshootTargetError:mag) < 4000 {
+  until abs(overshootTargetError():mag) < 4000 {
     printing().
   }
 
   set sstatus to "Boostback burn is ending, two side engines cutoff".
   toggle ag6.
-  set oldshoot to overshootTargetError:mag.
+  set oldshoot to overshootTargetError():mag.
   wait 0.1.
-  set newshoot to overshootTargetError:mag.
+  set newshoot to overshootTargetError():mag.
   until newshoot > oldshoot {
-    set oldshoot to overshootTargetError:mag.
+    set oldshoot to overshootTargetError():mag.
     wait 0.1.
-    set newshoot to overshootTargetError:mag.
+    set newshoot to overshootTargetError():mag.
     printing().
   }
 
@@ -131,7 +132,7 @@ function entry {
     printing().
   }
 
-  set sstatus to "Using RCS to push fuel down to the engines, 7km till entry burn, T+ " + round(t,1) + " Seconds".
+  set sstatus to "Using RCS to push fuel down to the engines, 6km till entry burn, T+ " + round(t,1) + " Seconds".
   set ship:control:fore to 1.
   set ti to time:seconds + 2.
   until time:seconds > ti {
@@ -184,8 +185,16 @@ function entry {
   set landingburncalc to 1.
   lbcalc().
   until altit < LBAlt and altit < 3000 {
+    set olderror to errorVector():mag.
+    wait 0.01.
+    set newerror to errorVector():mag.
     printing().
     lbcalc().
+    if newerror > olderror {
+      sas on.
+      wait 0.001.
+      sas off.
+    }
   }
 }
 
@@ -294,6 +303,8 @@ function printing {
   if landingburncalc = 1 {
     print "Landing Burn Altitude : " + round(LBAlt,1) + " Meters".
     print "Ship possible thrust: "  + round(shippossiblethr,1) + " kN".
+    print "Angle to target steering" + steeringManager:angleerror + " Degrees"..
+    print "AoA: " + abs(aoa) + " Degrees".
   }
 
   print "Press 10 to abort current program".
@@ -308,11 +319,9 @@ function LBCalc {
     }
   }
 
-  set grav to constant:g * body:mass / body:radius^2.
   set shippossiblethr to engpossibleThrust*engnum.
   set maxAccel to (shippossiblethr / ship:mass) - grav.	
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
-  set ImpactTime to altit / abs(ship:verticalspeed).
   set Thr to LBAlt / altit.
 }
 
@@ -326,10 +335,6 @@ function Steer {
  {
    set result to -velocity:surface:normalized + tan(aoa)*errorVector():normalized.
  }
-
- if errorVector():mag < 20 {
-      set result to -velocity:surface.
-  }
 
  return lookdirup(result, up:vector).
 }

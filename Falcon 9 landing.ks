@@ -43,7 +43,6 @@ function settings {
   set grav to constant:g * body:mass / body:radius^2.
   set maxAccel to (shippossiblethr / ship:mass) - grav.	
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
-  set ImpactTime to altit / abs(ship:verticalspeed).
   set Thr to LBAlt / altit.	
   set tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/20000). // overshoot distance calculation based on horizontalspeed and distance to the landing zone
   sas off.

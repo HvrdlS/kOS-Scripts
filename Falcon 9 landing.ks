@@ -36,14 +36,20 @@ function settings {
 
   set engnum to 3.
   set grav to body:mu / body:radius^2.
+  set gm to 1.
+  set oldTime to time:seconds.
   LBCalc().
-  set entryburnalt to 25000.
-  set entryburnmode to 1.
-  set speedcancelonentry to 35.
+  set entryburnalt to 35000.
+  set entryburnmode to 3.
+  set speedcancelonentry to 200.
+  set boostbackcalc to 0.
   set landingburncalc to 0.
-  set lngoff to (landingZone:lng - addons:tr:impactpos:lng)*10472.
-  set latoff to (landingZone:lat - addons:tr:impactpos:lat)*10472.
   set myvel to ship:velocity:surface.
+  set targetaltit to 0.7. /// target altitude
+  set P to 1.
+  set I to 0.01.
+  set D to 0.01.
+  set throttpid to pidloop(P,I,D,-1, 1).
   lock tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/15000).
   rcs on.
 }
@@ -57,18 +63,18 @@ function boostback {
   set n to time:seconds.
   set t to time:seconds - n.
   set sstatus to "Boostback burn starting, T+ " + round(t,1) + " Seconds".
-  toggle ag7. //Turn off all engines, but left the center
-  toggle ag6. //Turn on two aditional engines
-  set steeringManager:maxstoppingtime to 0.3.
-  set steeringManager:torqueepsilonmin to 0.03.
-  set steeringManager:torqueepsilonmax to 0.06.
-  set steeringManager:pitchtorquefactor to 0.7.
-  set steeringManager:yawtorquefactor to 0.7.
-  set steeringManager:rolltorquefactor to 0.3.
+  if ag6 = false {
+    toggle ag7. //Turn off all engines, but left the center
+    toggle ag6. //Turn on two aditional engines
+  }
+  
+  set steeringManager:maxstoppingtime to 0.2.
+  set steeringManager:torqueepsilonmin to 0.01.
+  set steeringManager:torqueepsilonmax to 0.02.
   lock steering to -vxcl(up:vector, overshootTargetError()).
   lock throttle to 0.2.
   set boostbackcalc to 1.
-  until vang(facing:vector, -vxcl(up:vector, overshootTargetError()))<5 {
+  until vang(facing:vector, -vxcl(up:vector, overshootTargetError()))<10 {
     printing().
     overshootTargetError().
   }
@@ -98,8 +104,6 @@ function boostback {
   lock steering to facing:vector.
   wait 2.
   toggle brakes.
-  unlock steering.
-  unlock throttle.
   set sstatus to "Coast, grid fins deployed, T+ " + round(t,1) + " Seconds".
 }
 
@@ -109,9 +113,7 @@ function coast {
     set sstatus to "First stage has reached apoapsis, T+ " + round(t,1) + " Seconds".
   }
 
-  set steeringManager:pitchtorquefactor to 0.08.
-  set steeringManager:yawtorquefactor to 0.08.
-  set steeringManager:rolltorquefactor to 0.1.
+  set steeringManager:maxstoppingtime to 0.03.
   lock steering to heading(270,90). 
   until vang(up:vector, ship:facing:vector) < 3 and ship:verticalspeed < -20 {
     printing().
@@ -137,32 +139,32 @@ function entry {
   set sstatus to "Awaiting for entry burn, T+ " + round(t,1) + " Seconds".
   set ship:control:fore to 0.
   set steeringManager:maxstoppingtime to 5.
-  set steeringManager:pitchtorquefactor to 1.
-  set steeringManager:yawtorquefactor to 1.
-  set steeringManager:rolltorquefactor to 1.
+  lock aoa to max(-15, -(errorVector():mag/speedcancelonentry)).
   until altit < entryburnalt {
-    set aoa to max(-10, -(errorVector():mag/100)).
     printing().
-    Steer().
   }
 
   set sstatus to "Entry burn starting, one engine, T+ " + round(t,1) + " Seconds".
-  lock steering to Steer().
+  lock steering to lookdirup(Steer(), facing:topvector).
   lock throttle to 1.
   set targetspeedonentry to myvel:mag - speedcancelonentry.
   if entryburnmode = 1 {
-    until myvel:mag < targetspeedonentry {
+    until errorVector():mag < 100 or myvel:mag < targetspeedonentry {
       printing().
-      set aoa to max(-15, -(errorVector():mag/100)).
+      if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
+        set aoa to max(-20, -(errorVector():mag/30)).
+      }
     }
 
   } else {
     wait 2.
     toggle ag6.
     set sstatus to "Entry burn starting, three engines lit, T+ " + round(t,1) + " Seconds".
-    until myvel:mag < targetspeedonentry {
+    until errorVector():mag < 100 or myvel:mag < targetspeedonentry {
       printing().
-      set aoa to max(-15, -(errorVector():mag/100)).
+      if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
+        set aoa to max(-15, -(errorVector():mag/20)).
+      }
     }
 
     toggle ag6.
@@ -172,16 +174,20 @@ function entry {
   set sstatus to "Entry burn shutdown, T+ " + round(t,1) + " Seconds".
   print sstatus.
   lock throttle to 0.
+  steeringManager:resettodefault.
   wait 0.1.
   toggle ag6.
   set sstatus to "Controlled descent".
-  set aoa to max(10,min(45, errorVector():mag/15)).
+  set aoa to -9.
   set engnum to 3.
   set landingburncalc to 1.
   lbcalc().
-  until altit < LBAlt-100 and altit < 3000 {
+  ThrPid().
+  lock P to abs(ship:velocity:surface:mag)/TargetVelocity.
+  until altit < 3500 and ThrPID()+hoverThr >= 1.1 {
     printing().
     lbcalc().
+    ThrPid().
   }
 }
 
@@ -189,38 +195,28 @@ function entry {
 function landing {
   set sstatus to "Landing burn has started, T+ " + round(t,1) + " Seconds".
   toggle ag6.
-  set aoa to 2.
   wait 0.3.
-  lock throttle to Thr.
+  lock throttle to ThrPid()+hoverThr.
   wait 1.
   toggle ag6.
   wait 0.01.
-  until -ship:velocity:surface:mag > -800 {
-    printing().
-    lbcalc().
-  }
-
-  lock maxAoA to min(20, altit/10).
-  lock aoa to -min(maxAoA, errorVector():mag/2).
-  lock steering to Steer().
-  until altit < 250 {
-    printing().
-    lbcalc().
-  }
-
   until altit < 100 {
     printing().
     lbcalc().
+    set maxAoA to min(10, altit/10).
+    set aoa to -min(maxAoA, errorVector():mag/2).
   }
       
   toggle gear.
+  set topvec to ship:facing:topvector.
+  lock steering to lookdirup(-ship:velocity:surface,topvec).
   set sstatus to "Landing burn, landing legs are deploying, T+ " + round(t,1) + " Seconds".
-  until altit < 70 {
+  until altit < 15 {
     printing().
     lbcalc().
   }
 
-  lock steering to lookdirup(-ship:velocity:surface,ship:facing:topvector).
+  lock steering to lookdirup(up:vector,topvec).
   set sstatus to "Landing burn, orienting retrograde, T+ " + round(t,1) + " Seconds".
   until ship:verticalspeed > -1 and ship:verticalspeed < 1 and altit < 2 {
     printing().
@@ -228,8 +224,6 @@ function landing {
   }
 
   set sstatus to "Touchdown, T+ " + round(t,1) + " Seconds".
-  set lngoff to (landingZone:lng - geoposition:lng)*10472. 
-  set latoff to (landingZone:lat - geoposition:lat)*10472. 
   set now1 to time:seconds.
   lock ti1 to time:seconds-now1.
   lock steering to lookdirup(up:vector, ship:facing:topvector).
@@ -273,7 +267,7 @@ function printing {
   clearscreen.
   set t to time:seconds - n.
   set myvel to ship:velocity:surface.
-  print "Welcome to Falcon 9 Landing Software".
+  print"Welcome to Falcon 9 Landing Software".
   print "Your preset is " +  preset.
   print "Status: " + sstatus.
   print "T+ since start of script to landing: " + round(t,1) + " Seconds".
@@ -285,28 +279,44 @@ function printing {
   }
 
   if landingburncalc = 1 {
-    print "Landing Burn Altitude : " + round(LBAlt,1) + " Meters".
+    print "Landing Burn Altitude: " + round(LBAlt,1) + " Meters".
     print "Ship possible thrust: "  + round(shippossiblethr,1) + " kN".
-    print "Angle to target steering" + round(steeringManager:angleerror,2) + " Degrees"..
-    print "AoA: " + round(abs(aoa),2) + " Degrees".
+    print "Angle to target steering: " + round(steeringManager:angleerror,2) + " Degrees".
+    print "AoA: " + round(abs(aoa),2) + " Degrees" at (1, 12).
+    print "Target velocity: " + round(TargetVelocity, 2) + " M/S".
+    print "HoverThr: " + round(hoverThr,2).
+    print "PidThr: " + round(ThrPID,2).
   }
 
   print "Press 10 to abort current program".
 }
 
+function ThrPID {
+  set TargetVelocity to -sqrt(2*maxAccel*(max(0.01, altit-targetaltit))).
+  set throttpid:setpoint to TargetVelocity.
+  return throttpid:update(time:seconds, ship:verticalspeed).
+}
+
 function LBCalc {
   list engines in engList.
   set engpossibleThrust to engList[0]:possiblethrust.
-  for e in engList {
+  if engpossibleThrust = 0 { 
+    set maxAccel to 0.01. 
+    set hoverThr to grav * ship:mass / shippossiblethr.	
+    set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
+  } else {
+    for e in engList {
     if e:possiblethrust > engpossibleThrust {
       set engpossibleThrust to e:possiblethrust.
     }
-  }
 
-  set shippossiblethr to engpossibleThrust*engnum.
-  set maxAccel to (shippossiblethr / ship:mass) - grav.	
-  set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).		
-  set Thr to LBAlt / altit.
+    set shippossiblethr to engpossibleThrust*engnum.
+    set maxAccel to (shippossiblethr / ship:mass) - grav.		
+    set hoverThr to grav * ship:mass / shippossiblethr.	
+    set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
+  }
+}
+
 }
 
 function errorVector {
@@ -320,13 +330,78 @@ function Steer {
    set result to -velocity:surface:normalized + tan(aoa)*errorVector():normalized.
  }
 
- return lookdirup(result, ship:facing:topvector).
+ return result.
 }
 
 function getImpact {
   if addons:tr:hasimpact { 
     return addons:tr:impactpos.
   } else {
-    return ship:geoposition.
+    if gm = 1 {
+      local localTime is time:seconds.
+      local impactData is impact_UTs().
+      local impactLatLng is ground_track(POSITIONAT(SHIP,impactData["time"]),impactData["time"]).
+      local oldTime is localTime.
+      return impactLatLng.
+    }
   }
+}
+
+
+
+function impact_UTs {//returns the UTs of the ship's impact, NOTE: only works for non hyperbolic orbits
+	parameter minError is 1.
+	if not (defined impact_UTs_impactHeight) { global impact_UTs_impactHeight is 0. }
+	local startTime is TIME:SECONDS.
+	local craftOrbit is SHIP:ORBIT.
+	local sma is craftOrbit:SEMIMAJORAXIS.
+	local ecc is craftOrbit:ECCENTRICITY.
+	local craftTA is craftOrbit:TRUEANOMALY.
+	local orbitPeriod is craftOrbit:PERIOD.
+	local ap is craftOrbit:APOAPSIS.
+	local pe is craftOrbit:PERIAPSIS.
+	local impactUTs is time_betwene_two_ta(ecc,orbitPeriod,craftTA,alt_to_ta(sma,ecc,SHIP:BODY,MAX(MIN(impact_UTs_impactHeight,ap - 1),pe + 1))[1]) + startTime.
+	local newImpactHeight is ground_track(POSITIONAT(SHIP,impactUTs),impactUTs):TERRAINHEIGHT.
+	set impact_UTs_impactHeight to (impact_UTs_impactHeight + newImpactHeight) / 2.
+	return lex("time",impactUTs,//the UTs of the ship's impact
+	"impactHeight",impact_UTs_impactHeight,//the aprox altitude of the ship's impact
+	"converged",((abs(impact_UTs_impactHeight - newImpactHeight) * 2) < minError)).//will be true when the change in impactHeight between runs is less than the minError
+}
+
+function alt_to_ta {//returns a list of the true anomalies of the 2 points where the craft's orbit passes the given altitude
+	parameter sma,ecc,bodyIn,altIn.
+	local rad is altIn + bodyIn:RADIUS.
+	local taOfAlt is arccos((-sma * ecc^2 + sma - rad) / (ecc * rad)).
+	return list(taOfAlt,360-taOfAlt).//first true anomaly will be as orbit goes from PE to AP
+}
+
+function time_betwene_two_ta {//returns the difference in time between 2 true anomalies, traveling from taDeg1 to taDeg2
+	parameter ecc,periodIn,taDeg1,taDeg2.
+	
+	local maDeg1 is ta_to_ma(ecc,taDeg1).
+	LOCAL maDeg2 is ta_to_ma(ecc,taDeg2).
+	
+	local timeDiff is periodIn * ((maDeg2 - maDeg1) / 360).
+	
+	return mod(timeDiff + periodIn, periodIn).
+}
+
+function ta_to_ma {//converts a true anomaly(degrees) to the mean anomaly (degrees) NOTE: only works for non hyperbolic orbits
+	parameter ecc,taDeg.
+	local eaDeg is arctan2(sqrt(1-ecc^2) * sin(taDeg), ecc + cos(taDeg)).
+	local maDeg is eaDeg - (ecc * sin(eaDeg) * constant:RADtoDEG).
+	return mod(maDeg + 360,360).
+}
+
+function ground_track {	//returns the geocoordinates of the ship at a given time(UTs) adjusting for planetary rotation over time, only works for non tilted spin on bodies 
+	PARAMETER pos,posTime,localBody IS SHIP:BODY.
+	LOCAL bodyNorth IS v(0,1,0).//using this instead of localBody:NORTH:VECTOR because in many cases the non hard coded value is incorrect
+	LOCAL rotationalDir IS VDOT(bodyNorth,localBody:ANGULARVEL) * CONSTANT:RADTODEG. //the number of degrees the body will rotate in one second
+	LOCAL posLATLNG IS localBody:GEOPOSITIONOF(pos).
+	LOCAL timeDif IS posTime - TIME:SECONDS.
+	LOCAL longitudeShift IS rotationalDir * timeDif.
+	LOCAL newLNG IS MOD(posLATLNG:LNG + longitudeShift,360).
+	IF newLNG < - 180 { SET newLNG TO newLNG + 360. }
+	IF newLNG > 180 { SET newLNG TO newLNG - 360. }
+	RETURN LATLNG(posLATLNG:LAT,newLNG).
 }

@@ -13,7 +13,7 @@ on ag10 {
 function settings {
   unlock all.
   set ship:control:pilotmainthrottle to 0.
-  set preset to "LZ-1". // Your preset where to land
+  set preset to "LIOP". // Your preset where to land
   if preset = "LZ-1" {
     set landingZone to latlng(-0.195523668957612,-74.4851660606608).
   } else if preset = "LZ-2" {
@@ -38,19 +38,20 @@ function settings {
   set grav to body:mu / body:radius^2.
   set gm to 1.
   set oldTime to time:seconds.
-  LBCalc().
-  set entryburnalt to 35000.
+  set entryburnalt to 33000.
   set entryburnmode to 3.
-  set speedcancelonentry to 200.
+  set speedcancelonentry to 330.
   set boostbackcalc to 0.
   set landingburncalc to 0.
   set myvel to ship:velocity:surface.
-  set targetaltit to 0.7. /// target altitude
+  set targetaltit to 0. /// target altitude
   set P to 1.
-  set I to 0.01.
-  set D to 0.01.
+  set I to 0.
+  set D to 0.
   set throttpid to pidloop(P,I,D,-1, 1).
-  lock tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs((ship:position-landingZone:position):mag)/15000).
+  lock tarerror to vxcl(up:vector, ship:velocity:surface):mag*(abs(((ship:position-landingZone:position):mag)+(speedcancelonentry*30))/15000).
+  LBCalc().
+  ThrPID().
   rcs on.
 }
 
@@ -63,10 +64,8 @@ function boostback {
   set n to time:seconds.
   set t to time:seconds - n.
   set sstatus to "Boostback burn starting, T+ " + round(t,1) + " Seconds".
-  if ag6 = false {
-    toggle ag7. //Turn off all engines, but left the center
-    toggle ag6. //Turn on two aditional engines
-  }
+  ag7 on. //Turn off all engines, but left the center
+  ag6 on. //Turn on two aditional engines
   
   set steeringManager:maxstoppingtime to 0.2.
   set steeringManager:torqueepsilonmin to 0.01.
@@ -87,7 +86,7 @@ function boostback {
   }
 
   set sstatus to "Boostback burn is ending, two side engines cutoff".
-  toggle ag6.
+  ag6 off.
   set olderror to overshootTargetError():mag.
   wait 0.1.
   set newerror to overshootTargetError():mag.
@@ -103,7 +102,7 @@ function boostback {
   set boostbackcalc to 0.
   lock steering to facing:vector.
   wait 2.
-  toggle brakes.
+  brakes on.
   set sstatus to "Coast, grid fins deployed, T+ " + round(t,1) + " Seconds".
 }
 
@@ -139,7 +138,7 @@ function entry {
   set sstatus to "Awaiting for entry burn, T+ " + round(t,1) + " Seconds".
   set ship:control:fore to 0.
   set steeringManager:maxstoppingtime to 5.
-  lock aoa to max(-15, -(errorVector():mag/speedcancelonentry)).
+  lock aoa to max(-10, -(errorVector():mag/speedcancelonentry)).
   until altit < entryburnalt {
     printing().
   }
@@ -149,7 +148,7 @@ function entry {
   lock throttle to 1.
   set targetspeedonentry to myvel:mag - speedcancelonentry.
   if entryburnmode = 1 {
-    until errorVector():mag < 100 or myvel:mag < targetspeedonentry {
+    until errorVector():mag < 50 or myvel:mag < targetspeedonentry {
       printing().
       if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
         set aoa to max(-20, -(errorVector():mag/30)).
@@ -158,16 +157,16 @@ function entry {
 
   } else {
     wait 2.
-    toggle ag6.
+    ag6 on.
     set sstatus to "Entry burn starting, three engines lit, T+ " + round(t,1) + " Seconds".
-    until errorVector():mag < 100 or myvel:mag < targetspeedonentry {
+    until errorVector():mag < 50 or myvel:mag < targetspeedonentry {
       printing().
       if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
         set aoa to max(-15, -(errorVector():mag/20)).
       }
     }
 
-    toggle ag6.
+    ag6 off.
     wait 2.
   }
 
@@ -176,15 +175,14 @@ function entry {
   lock throttle to 0.
   steeringManager:resettodefault.
   wait 0.1.
-  toggle ag6.
+  ag6 on.
   set sstatus to "Controlled descent".
-  set aoa to -9.
+  set aoa to -10.
   set engnum to 3.
   set landingburncalc to 1.
   lbcalc().
   ThrPid().
-  lock P to abs(ship:velocity:surface:mag)/TargetVelocity.
-  until altit < 3500 and ThrPID()+hoverThr >= 1.1 {
+  until altit < 3500 and ThrPID()+hoverThr >= 1.15 {
     printing().
     lbcalc().
     ThrPid().
@@ -194,31 +192,20 @@ function entry {
 
 function landing {
   set sstatus to "Landing burn has started, T+ " + round(t,1) + " Seconds".
-  toggle ag6.
+  ag6 off.
   wait 0.3.
   lock throttle to ThrPid()+hoverThr.
   wait 1.
-  toggle ag6.
+  ag6 on.
   wait 0.01.
   until altit < 100 {
     printing().
     lbcalc().
-    set maxAoA to min(10, altit/10).
-    set aoa to -min(maxAoA, errorVector():mag/2).
   }
       
-  toggle gear.
-  set topvec to ship:facing:topvector.
-  lock steering to lookdirup(-ship:velocity:surface,topvec).
+  gear on.
   set sstatus to "Landing burn, landing legs are deploying, T+ " + round(t,1) + " Seconds".
-  until altit < 15 {
-    printing().
-    lbcalc().
-  }
-
-  lock steering to lookdirup(up:vector,topvec).
-  set sstatus to "Landing burn, orienting retrograde, T+ " + round(t,1) + " Seconds".
-  until ship:verticalspeed > -1 and ship:verticalspeed < 1 and altit < 2 {
+  until ship:verticalspeed > -1 and ship:verticalspeed < 1 or ship:status = "Landed" or ship:status = "Splashed" {
     printing().
     lbcalc().
   }
@@ -235,7 +222,7 @@ function landing {
 
   set sstatus to "Landing confirmed, T+ " + round(t,1) + " Seconds".
   lock throttle to 0.05.
-  wait 1.
+  wait 2.
   lock throttle to 0.
   print preset + ", landing confirmed, getting ready for post landing procedures, T+ " + round(t,1) + " Seconds".
   set now1 to time:seconds.
@@ -252,7 +239,7 @@ function landing {
   unlock throttle.
   sas off.
   rcs off.
-  toggle brakes.
+  brakes off.
 }
 
 
@@ -282,7 +269,7 @@ function printing {
     print "Landing Burn Altitude: " + round(LBAlt,1) + " Meters".
     print "Ship possible thrust: "  + round(shippossiblethr,1) + " kN".
     print "Angle to target steering: " + round(steeringManager:angleerror,2) + " Degrees".
-    print "AoA: " + round(abs(aoa),2) + " Degrees" at (1, 12).
+    print "AoA: " + round(aoa,2) + " Degrees" at (1, 12).
     print "Target velocity: " + round(TargetVelocity, 2) + " M/S".
     print "HoverThr: " + round(hoverThr,2).
     print "PidThr: " + round(ThrPID,2).
@@ -293,28 +280,27 @@ function printing {
 
 function ThrPID {
   set TargetVelocity to -sqrt(2*maxAccel*(max(0.01, altit-targetaltit))).
+  set P to abs(verticalSpeed/TargetVelocity).
+  set throttpid:kp to P.
   set throttpid:setpoint to TargetVelocity.
   return throttpid:update(time:seconds, ship:verticalspeed).
 }
 
 function LBCalc {
   list engines in engList.
-  set engpossibleThrust to engList[0]:possiblethrust.
-  if engpossibleThrust = 0 { 
-    set maxAccel to 0.01. 
-    set hoverThr to grav * ship:mass / shippossiblethr.	
-    set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
-  } else {
-    for e in engList {
-    if e:possiblethrust > engpossibleThrust {
-      set engpossibleThrust to e:possiblethrust.
-    }
-
-    set shippossiblethr to engpossibleThrust*engnum.
-    set maxAccel to (shippossiblethr / ship:mass) - grav.		
-    set hoverThr to grav * ship:mass / shippossiblethr.	
-    set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
+  set engpossibleThrust to engList[0]:possiblethrust. 
+  for e in engList {
+  if e:possiblethrust > engpossibleThrust {
+    set engpossibleThrust to e:possiblethrust.
   }
+
+  set shippossiblethr to engpossibleThrust*engnum.
+  set maxAccel to (shippossiblethr / ship:mass) - grav.		
+  set hoverThr to grav * ship:mass / shippossiblethr.	
+  set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
+
+  set maxAoA to min(10, altit/20).
+  set aoa to -min(maxAoA, errorVector():mag/2).
 }
 
 }
@@ -324,13 +310,23 @@ function errorVector {
 }
 
 function Steer {
- set result to -velocity:surface + errorVector().
- if vang(result, -velocity:surface) > aoa
- {
-   set result to -velocity:surface:normalized + tan(aoa)*errorVector():normalized.
- }
+  if verticalspeed > -40 {
+    set result to up:vector + errorVector().
+    if vang(result, up:vector) > aoa
+    {
+      set result to up:vector:normalized + tan(aoa)*errorVector():normalized.
+    }
 
- return result.
+    return result.
+  } else {
+    set result to -velocity:surface + errorVector().
+    if vang(result, -velocity:surface) > aoa
+    {
+      set result to -velocity:surface:normalized + tan(aoa)*errorVector():normalized.
+    }
+
+    return result.
+  }
 }
 
 function getImpact {

@@ -43,6 +43,7 @@ function settings {
   set speedcancelonentry to 330.
   set boostbackcalc to 0.
   set landingburncalc to 0.
+  set aoacoef to 2.
   set myvel to ship:velocity:surface.
   set targetaltit to 0. /// target altitude
   set P to 1.
@@ -148,10 +149,10 @@ function entry {
   lock throttle to 1.
   set targetspeedonentry to myvel:mag - speedcancelonentry.
   if entryburnmode = 1 {
-    until errorVector():mag < 50 or myvel:mag < targetspeedonentry {
+    until myvel:mag < targetspeedonentry {
       printing().
       if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
-        set aoa to max(-20, -(errorVector():mag/30)).
+        set aoa to max(-20, -(errorVector():mag/20)).
       }
     }
 
@@ -159,10 +160,10 @@ function entry {
     wait 2.
     ag6 on.
     set sstatus to "Entry burn starting, three engines lit, T+ " + round(t,1) + " Seconds".
-    until errorVector():mag < 50 or myvel:mag < targetspeedonentry {
+    until myvel:mag < targetspeedonentry {
       printing().
       if vdot(errorVector(), (landingZone:position-ship:position)) < 0 {
-        set aoa to max(-15, -(errorVector():mag/20)).
+        set aoa to max(-20, -(errorVector():mag/10)).
       }
     }
 
@@ -182,7 +183,7 @@ function entry {
   set landingburncalc to 1.
   lbcalc().
   ThrPid().
-  until altit < 3500 and ThrPID()+hoverThr >= 1.15 {
+  until altit < 3500 and ThrPID()+hoverThr >= 1.05 {
     printing().
     lbcalc().
     ThrPid().
@@ -300,7 +301,7 @@ function LBCalc {
   set LBAlt to ship:verticalspeed^2 / (2 * maxAccel).
 
   set maxAoA to min(10, altit/20).
-  set aoa to -min(maxAoA, errorVector():mag/2).
+  set aoa to -min(maxAoA, errorVector():mag/aoacoef).
 }
 
 }
@@ -310,7 +311,8 @@ function errorVector {
 }
 
 function Steer {
-  if verticalspeed > -40 {
+  if verticalspeed > -100 {
+    set aoacoef to 1.
     set result to up:vector + errorVector().
     if vang(result, up:vector) > aoa
     {

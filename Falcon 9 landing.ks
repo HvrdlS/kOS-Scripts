@@ -13,7 +13,7 @@ on ag10 {
 function settings {
   unlock all.
   set ship:control:pilotmainthrottle to 0.
-  set preset to "LIOP". // Your preset where to land
+  set preset to "LZ-1". // Your preset where to land
   if preset = "LZ-1" {
     set landingZone to latlng(-0.195523668957612,-74.4851660606608).
   } else if preset = "LZ-2" {
@@ -29,18 +29,18 @@ function settings {
   }
 
   if preset = "LZ-1" or preset = "LZ-2" or preset = "LZ-4" {
-    lock altit to alt:radar - 22.4.
+    lock altit to alt:radar - 22.2.
   } else {
-    lock altit to altitude - 22.6.
+    lock altit to altitude - 22.4.
   }
 
   set engnum to 3.
   set grav to body:mu / body:radius^2.
   set gm to 1.
   set oldTime to time:seconds.
-  set entryburnalt to 33000.
-  set entryburnmode to 3.
-  set speedcancelonentry to 330.
+  set entryburnalt to 31000.
+  set entryburnmode to 1.
+  set speedcancelonentry to 40.
   set boostbackcalc to 0.
   set landingburncalc to 0.
   set aoacoef to 2.

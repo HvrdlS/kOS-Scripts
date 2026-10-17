@@ -12,19 +12,20 @@ function abortofscript {
 
 
 function printing {
+  clearScreen.
   if ship:status = "Flying" or ship:verticalspeed > 0 or ship:verticalspeed < 0 or alt:radar > 40 {
     set tpl to time:seconds - n.
   } else {
     set tpl to (n - time:seconds).
   }
-  print "Mission status: " + missionstatus at (1, 1).
-  print "T: " + round(abs(tpl),1) + " Seconds" at (1, 2).
-  print "Target apoapsis: " + TargetAp + " Meters" at (1, 3).
-  print "Target periapsis: " + TargetPe + " Meters" at (1, 4).
-  print "Target velocity: " + round(TargetVel,2) + " M/S" at (1, 5).
-  print "Target inclination: " + TargetInc + " Degrees" at (1, 6).
-  print "Azimuth: " + round(Azimuth,2) at (1, 7).
-  print "Press 10 to abort current program" at (1, 8).
+  print "Mission status: " + missionstatus.
+  print "T: " + round(abs(tpl),1) + " Seconds".
+  print "Target apoapsis: " + TargetAp + " Meters".
+  print "Target periapsis: " + TargetPe + " Meters".
+  print "Target velocity: " + round(TargetVel,2) + " M/S".
+  print "Target inclination: " + round(TargetInc,3) + " Degrees".
+  print "Azimuth: " + round(Azimuth,2).
+  print "Press 10 to abort current program".
   wait 0.1.
 }
 
@@ -34,6 +35,11 @@ function AzimuthCalc {
   local VelSite is (2*constant:pi*body:radius*cos(ship:geoposition:lat))/body:rotationperiod.
   local VelX is TargetVel*cos(IncInert)-VelSite.
   local VelY is TargetVel*sin(IncInert).
+  if launchnorth {
+    set VelY to abs(VelY).
+  } else {
+    set VelY to -abs(VelY).
+  }
   local AzimuthMath is mod(arctan2(VelX, VelY)+360, 360).
   return mod(AzimuthMath+360,360).
 }
@@ -41,13 +47,19 @@ function AzimuthCalc {
 
 function preflight {
   set missionstatus to "Awaiting for launch window".
-  set payload to "Dragon".
-  set TargetPe to 98000.
-  set TargetAp to 105000.
+  set payload to "Payload". /// Dragon/Payload
+
+  set doLand to "True". /// True/False
+  set firststageCPU to processor("FirstStageMainPC").
+  firststageCPU:connection:sendmessage(doLand).
+
+  set TargetPe to 80000.
+  set TargetAp to 100000.
   set TargetInc to 0.
+  set launchnorth to true. /// True/False
   if TargetInc <= abs(ship:geoposition:lat) {
-    if abs(ship:geoposition:lat) < 0.1 {
-      set TargetInc to 0.1.
+    if abs(ship:geoposition:lat) < 0.01 {
+      set TargetInc to 0.01.
     } else {
       set TargetInc to abs(ship:geoposition:lat).
     }
@@ -58,16 +70,16 @@ function preflight {
   set Azimuth to AzimuthCalc(TargetInc).
   set startsteer to lookDirUp(up:vector, ship:facing:topvector).
   set PitchKickAlt to 130.
-  set ThrDownAlt to 2050.
-  set MECOAlt to 34000.
-  set ThrDown2Alt to 27000.
+  set ThrDownAlt to 1700.
+  set MECOAlt to 31500.
+  set ThrDown2Alt to 26000.
   set FairingAlt to 56500.
   set g to body:mu / body:radius^2.
-  set steeringManager:maxstoppingtime to 0.04.
-  set sec to 15.
-  set minut to 49.
-  set hour to 05.
-  set clock to "05:49:05".
+  set steeringManager:maxstoppingtime to 0.06.
+  set sec to 45.
+  set minut to 47.
+  set hour to 02.
+  set clock to "02:47:35". /// 10 seconds before
   lights off.
   sas off.
   set n to time:seconds + ((hour-time:hour)*60+minut-time:minute)*60+(sec-time:second).
@@ -93,7 +105,7 @@ function preflight {
 
 
 function countdown {
-  until t <= 6 {
+  until t <= 4 {
     printing().
   }
 
@@ -113,7 +125,7 @@ function countdown {
   set missionstatus to "Full thrust, T- " + round(t,1) + " Seconds".
   set now to time:seconds.
   lock ti to time:seconds - now.
-  lock throttle to min(1, ti/1).
+  lock throttle to min(0.92, ti/1).
   until t <= 0 {
     printing().
   }
@@ -127,14 +139,14 @@ function countdown {
 
 
 function inflightvars {
-  if ship:maxthrust > 0 {
+  if ship:availablethrust > 0 {
     set twr to ship:mass * g / ship:availablethrust.
-  } else if ship:maxthrust = 0 {
+  } else if ship:availablethrust = 0 {
     set twr to 0.
   }
 
-  if payload = "Dragon" { set pitchcalc to 90-((((ship:apoapsis/TargetPe)^0.9))*90). }
-  if payload = "Payload" { set pitchcalc to 90-((((ship:apoapsis/TargetPe)^0.8))*90). }
+  if payload = "Dragon" { set pitchcalc to 90-((((ship:apoapsis/TargetPe)^1))*90). }
+  if payload = "Payload" { set pitchcalc to 90-((((ship:apoapsis/TargetPe)^0.9))*90). }
 }
 
 
@@ -158,7 +170,7 @@ function flight {
   }
 
   set missionstatus to "Throttle down, T+ " + round(tpl,1) + " Seconds".
-  lock throttle to 1.46 * twr.
+  lock throttle to 1.24 * twr.
   set oldq to ship:q.
   wait 0.01.
   set newq to ship:q.
@@ -170,24 +182,15 @@ function flight {
     set newq to ship:q.
   }
 
-  set missionstatus to "Max-Q is reached, " + round(newq*constant:atmtokpa,3) + "kP, " +  "T+ " + round(tpl,1) + " Seconds".
-  set now to time:seconds.
-  set ti to time:seconds-now.
-  until ti > 12 {
-    printing().
-    inflightvars().
-    set ti to time:seconds-now.
-  }
-
-  set missionstatus to "Throttle up, T+ " + round(tpl,1) + " Seconds".
-  lock throttle to 2.9*twr.
+  set missionstatus to "Max-Q is reached, throttle up " + round(newq*constant:atmtokpa,3) + "kP, " +  "T+ " + round(tpl,1) + " Seconds".
+  lock throttle to 2.7*twr.
   until altitude > ThrDown2Alt {
     printing().
     inflightvars().
   }
 
   set missionstatus to "Throttle down before MECO, T+ " + round(tpl,1) + " Seconds".
-  lock throttle to 2*twr.
+  lock throttle to 2.55*twr.
   until altitude > MECOAlt {
     printing().
     inflightvars().
@@ -199,9 +202,8 @@ function flight {
   set thr to throttle.
   lock throttle to max(0, thr-ti/1).
   rcs on.
-  set now1 to time:seconds.
-  lock ti1 to time:seconds-now1.
-  until ti1 > 4 {
+  set ti1 to time:seconds+4.
+  until time:seconds > ti1 {
     printing().
     inflightvars().
   }
@@ -210,9 +212,8 @@ function flight {
   toggle ag2.
   stage.
   set ship:control:fore to 1.
-  set now1 to time:seconds.
-  lock ti1 to time:seconds-now1.
-  until ti1 > 5 {
+  set ti1 to time:seconds+5.
+  until time:seconds > ti1 {
     printing().
     inflightvars().
   }
@@ -225,17 +226,15 @@ function flight {
   lock ti to time:seconds - now.
   lock throttle to min(0.5, ti/1).
   set ship:control:fore to 0.
-  set steeringManager:maxstoppingtime to 2.
-  set now1 to time:seconds.
-  lock ti1 to time:seconds-now1.
-  until ti1 > 3 {
+  set steeringManager:maxstoppingtime to 0.6.
+  set ti1 to time:seconds+3.
+  until time:seconds > ti1 {
     printing().
     inflightvars().
   }
 
   set missionstatus to "SES-1, protection ring separation, T+ " + round(tpl,1) + " Seconds".
   stage.
-  wait 1.
   if payload = "Payload" {
     until altitude > FairingAlt {
       printing().
@@ -253,8 +252,8 @@ function flight {
   } 
 
   set missionstatus to "Guidance program is initiating till targeted parking orbit is reached, T+ " + round(tpl,1) + " Seconds".
-  set pi1 to pidloop(0.1,0,0.001, 0.25,1).
-  set pi2 to pidloop(0.02,0,0.005, -20,65).
+  set pi1 to pidloop(0.05,0,0.001, 0.25,1).
+  set pi2 to pidloop(0.005,0,0.005, -20,65).
   set thr to 0.5.
   lock throttle to thr.
   set pitch to 35.
@@ -276,6 +275,7 @@ function flight {
     lock ti1 to time:seconds-now1.
     until ti1 > 1 {
       printing().
+      inflightvars().
     }
 
     set ship:control:fore to 0.
@@ -302,8 +302,8 @@ function pid1 {
 function pid2 {
   set targeteta2 to 15.
   set pi1:setpoint to targeteta2.
-  set pi3 to pidloop(0.08,0,0.001, 0.25,1).
-  set pi4 to pidloop(0.7,0,0.05, -10,30).
+  set pi3 to pidloop(0.06,0,0.001, 0.25,1).
+  set pi4 to pidloop(0.5,0,0.05, -10,30).
   set pi3:setpoint to 5.
   set pi4:setpoint to 5.
   until ship:periapsis >= TargetPe-10000 {
